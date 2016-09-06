@@ -1,0 +1,48 @@
+#%RAML 0.8
+title: order management
+version: v1.0
+baseUri: http://server/
+/orders:
+     /{id}:
+       get:
+         description: Retrieve a specific order details
+         responses:
+           200:
+             body:
+               application/json:
+                example: |
+                   {
+                     "data": {
+                       "order" : {
+                       "id": "SbBGk",
+                       "customer_name": "George",
+                       "cusotmer_id": 122,
+                       "datetime": 1341533193,
+                       },"order_items" :[{
+                            "order_item_id" :"11",
+                            "item_id" :"1",
+                            "item_name":"pen",
+                            "item_quantity":10,
+                             "item_price":100
+                       }]
+                     }
+                   }
+/item:
+     /{id}:
+       get:
+         description: Retrieve a specific order details
+         responses:
+           200:
+             body:
+               application/json:
+                example: |
+                   {
+                     "data": {
+                       "item" : {
+                       "item_id" :101,
+                       "item_name":"pen",
+                       "item_quantity":10,
+                       "item_price":100
+                       }]
+                     }
+                   }

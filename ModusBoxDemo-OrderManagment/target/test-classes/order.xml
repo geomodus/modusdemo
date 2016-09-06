@@ -1,0 +1,187 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:apikit="http://www.mulesoft.org/schema/mule/apikit" xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:json="http://www.mulesoft.org/schema/mule/json" xmlns:metadata="http://www.mulesoft.org/schema/mule/metadata" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/apikit http://www.mulesoft.org/schema/mule/apikit/current/mule-apikit.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.1.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+    <http:listener-config name="order-httpListenerConfig" host="0.0.0.0" port="${http.port}" doc:name="HTTP Listener Configuration" />
+    <apikit:config name="order-config" raml="order.raml" consoleEnabled="false" doc:name="Router" />
+    <db:generic-config name="AWS_DB" url="jdbc:postgresql://modusdb.cyouok1yhu5i.us-west-2.rds.amazonaws.com:5432/modusdemo?password=modus123&amp;user=modus_user&amp;ssl=true&amp;sslfactory=org.postgresql.ssl.NonValidatingFactory" driverClassName="org.postgresql.Driver" doc:name="Generic Database Configuration" />
+    <flow name="order-main">
+        <http:listener config-ref="order-httpListenerConfig" path="/api/*" doc:name="HTTP" />
+        <apikit:router config-ref="order-config" doc:name="APIkit Router" />
+        <exception-strategy ref="order-apiKitGlobalExceptionMapping" doc:name="Reference Exception Strategy" />
+    </flow>
+    <flow name="order-console">
+        <http:listener config-ref="order-httpListenerConfig" path="/console/*" doc:name="HTTP" />
+        <apikit:console config-ref="order-config" doc:name="APIkit Console" />
+    </flow>
+    <flow name="get:/orders/{id}:order-config">
+        <http:listener config-ref="order-httpListenerConfig" path="/orders/{id}/*" allowedMethods="GET" doc:name="HTTP">
+            <http:response-builder statusCode="200" reasonPhrase="success" />
+        </http:listener>
+        <set-variable variableName="orderId" value="#[message.inboundProperties.'http.uri.params'.id]" doc:name="Variable"/>
+        <logger message="#[message]" level="INFO" doc:name="Logger" />
+        <choice doc:name="Choice">
+            <when expression="#[flowVars.orderId !=' ']">
+                <db:select config-ref="AWS_DB" doc:name="Database">
+                    <db:dynamic-query><![CDATA[select oh.order_id,oh.customer_name,oh.customer_id,oh.created_date,oli.item_id,oli.item_count from order_header oh,order_line_items oli where oh.order_id=#[message.inboundProperties.'http.uri.params'.id] and oh.order_id = oli.order_id]]></db:dynamic-query>
+                </db:select>
+                <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+                <choice doc:name="Choice">
+                    <when expression="#[payload !=[]]">
+                        <json:object-to-json-transformer doc:name="Object to JSON"/>
+                        <dw:transform-message metadata:id="4ee057e9-4853-48d8-9653-fe5e052fbc08" doc:name="Transform Message">
+                            <dw:input-payload doc:sample="C:\Projects\modusbox\db_output.json"/>
+                            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+{
+	data: {
+		order: {
+			id: payload[0].order_id as :string,
+			customer_name: payload[0].customer_name,
+			cusotmer_id: payload[0].customer_id as :string,
+			created_time:payload[0].created_date
+		},
+		order_items: payload map ((payload01 , indexOfPayload01) -> {
+			item_id: payload01.item_id as :string,
+			item_quantity: payload01.item_count as :string
+		})
+	}
+}]]></dw:set-payload>
+                        </dw:transform-message>
+                    </when>
+                    <otherwise>
+                        <logger level="INFO" doc:name="Logger" message="'Order Id Doesnt Exist'"/>
+                        <set-property propertyName="Content-Type" value="application/json" doc:name="Property" />
+            <set-payload value="{ &quot;message&quot;: &quot;order Id not found&quot; }" doc:name="Set Payload" />
+       
+                    </otherwise>
+                </choice>
+            </when>
+            <otherwise>
+
+                <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+     		<set-property propertyName="Content-Type" value="application/json" doc:name="Property" />
+            <set-payload value="{ &quot;message&quot;: &quot;order Id not found&quot; }" doc:name="Set Payload" />
+       
+                
+            </otherwise>
+        </choice>
+
+    </flow>
+      <flow name="get:/orders/*:order-config">
+        <http:listener config-ref="order-httpListenerConfig" path="/orders/{id}/*" allowedMethods="GET" doc:name="HTTP">
+            <http:response-builder statusCode="200" reasonPhrase="success" />
+        </http:listener>
+        <set-variable variableName="orderId" value="#[message.inboundProperties.'http.uri.params'.id]" doc:name="Variable"/>
+        <logger message="#[message]" level="INFO" doc:name="Logger" />
+        <choice doc:name="Choice">
+            <when expression="#[flowVars.orderId !=' ']">
+                <db:select config-ref="AWS_DB" doc:name="Database">
+                    <db:dynamic-query><![CDATA[select oh.order_id,oh.customer_name,oh.customer_id,oh.created_date,oli.item_id,oli.item_count from order_header oh,order_line_items oli where oh.order_id=#[message.inboundProperties.'http.uri.params'.id] and oh.order_id = oli.order_id]]></db:dynamic-query>
+                </db:select>
+                <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+                <choice doc:name="Choice">
+                    <when expression="#[payload !=[]]">
+                        <json:object-to-json-transformer doc:name="Object to JSON"/>
+                        <dw:transform-message metadata:id="4ee057e9-4853-48d8-9653-fe5e052fbc08" doc:name="Transform Message">
+                            <dw:input-payload doc:sample="C:\Projects\modusbox\db_output.json"/>
+                            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+{
+	data: {
+		order: {
+			id: payload[0].order_id as :string,
+			customer_name: payload[0].customer_name,
+			cusotmer_id: payload[0].customer_id as :string,
+			created_time:payload[0].created_date
+		},
+		order_items: payload map ((payload01 , indexOfPayload01) -> {
+			item_id: payload01.item_id as :string,
+			item_quantity: payload01.item_count as :string
+		})
+	}
+}]]></dw:set-payload>
+                        </dw:transform-message>
+                    </when>
+                    <otherwise>
+                        <logger level="INFO" doc:name="Logger" message="'Order Id Doesnt Exist'"/>
+                        <set-property propertyName="Content-Type" value="application/json" doc:name="Property" />
+            <set-payload value="{ &quot;message&quot;: &quot;order Id not found&quot; }" doc:name="Set Payload" />
+       
+                    </otherwise>
+                </choice>
+            </when>
+            <otherwise>
+
+                <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+     		<set-property propertyName="Content-Type" value="application/json" doc:name="Property" />
+            <set-payload value="{ &quot;message&quot;: &quot;order Id not found&quot; }" doc:name="Set Payload" />
+       
+                
+            </otherwise>
+        </choice>
+
+    </flow>
+    
+    <flow name="get:/item/{id}:order-config">
+        <http:listener config-ref="order-httpListenerConfig" path="*/items/{id}" allowedMethods="GET" doc:name="HTTP"/>
+        <logger message="#[message]" level="INFO" doc:name="Logger"/>
+        <db:select config-ref="AWS_DB" doc:name="Database">
+            <db:dynamic-query><![CDATA[select * from items where item_id=#[message.inboundProperties.'http.uri.params'.id]]]></db:dynamic-query>
+        </db:select>
+        <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+        <json:object-to-json-transformer doc:name="Object to JSON"/>
+        <dw:transform-message metadata:id="4ee057e9-4853-48d8-9653-fe5e052fbc08" doc:name="Transform Message">
+            <dw:input-payload doc:sample="C:\Projects\modusbox\db_output.json"/>
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+{
+	data: {
+		item_id: payload[0].item_id,
+		item_name: payload[0].item_name,
+		item_cost: payload[0].item_cost,
+		item_SKU: payload[0].item_SKU,
+		manufacturer: payload[0].manufacturer,
+		item_type: payload[0].item_type,
+		item_spec: payload[0].item_spec
+	}
+}]]></dw:set-payload>
+        </dw:transform-message>
+
+    </flow>
+    <apikit:mapping-exception-strategy name="order-apiKitGlobalExceptionMapping">
+        <apikit:mapping statusCode="404">
+            <apikit:exception value="org.mule.module.apikit.exception.NotFoundException" />
+            <set-property propertyName="Content-Type" value="application/json" doc:name="Property" />
+            <set-payload value="{ &quot;message&quot;: &quot;Resource not found&quot; }" doc:name="Set Payload" />
+        </apikit:mapping>
+        <apikit:mapping statusCode="405">
+            <apikit:exception value="org.mule.module.apikit.exception.MethodNotAllowedException" />
+            <set-property propertyName="Content-Type" value="application/json" doc:name="Property" />
+            <set-payload value="{ &quot;message&quot;: &quot;Method not allowed&quot; }" doc:name="Set Payload" />
+        </apikit:mapping>
+        <apikit:mapping statusCode="415">
+            <apikit:exception value="org.mule.module.apikit.exception.UnsupportedMediaTypeException" />
+            <set-property propertyName="Content-Type" value="application/json" doc:name="Property" />
+            <set-payload value="{ &quot;message&quot;: &quot;Unsupported media type&quot; }" doc:name="Set Payload" />
+        </apikit:mapping>
+        <apikit:mapping statusCode="406">
+            <apikit:exception value="org.mule.module.apikit.exception.NotAcceptableException" />
+            <set-property propertyName="Content-Type" value="application/json" doc:name="Property" />
+            <set-payload value="{ &quot;message&quot;: &quot;Not acceptable&quot; }" doc:name="Set Payload" />
+        </apikit:mapping>
+        <apikit:mapping statusCode="400">
+            <apikit:exception value="org.mule.module.apikit.exception.BadRequestException" />
+            <set-property propertyName="Content-Type" value="application/json" doc:name="Property" />
+            <set-payload value="{ &quot;message&quot;: &quot;Bad request&quot; }" doc:name="Set Payload" />
+        </apikit:mapping>
+    </apikit:mapping-exception-strategy>
+</mule>
